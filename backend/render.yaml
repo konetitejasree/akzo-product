@@ -3,8 +3,8 @@ services:
     name: akzo-product-backend
     runtime: docker
     plan: free
-    rootDir: .
-    dockerfilePath: ./dockerfile
+    rootDir: backend
+    dockerfilePath: dockerfile
     healthCheckPath: /health
     autoDeploy: true
     envVars:
