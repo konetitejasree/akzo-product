@@ -52,6 +52,14 @@ def _fuzzy_score(query, blob):
     return score
 
 
+def _usage_compatible(requested_usage, candidate_usage):
+    if not requested_usage or not candidate_usage:
+        return True
+    if requested_usage == candidate_usage:
+        return True
+    return "indoor/outdoor" in {requested_usage, candidate_usage}
+
+
 def search_agent(intent_data, products=None, limit=4):
     catalog = products or load_products()
 
@@ -85,7 +93,7 @@ def search_agent(intent_data, products=None, limit=4):
             score -= 2
 
         usage = intent_data.get("usage")
-        if usage and (product["usage"] == usage or product["usage"] == "indoor/outdoor"):
+        if usage and _usage_compatible(usage, product["usage"]):
             score += 3
             reasons.append(f"usage: {usage}")
         elif usage:
@@ -124,7 +132,7 @@ def search_agent(intent_data, products=None, limit=4):
                 continue
             if product["surface"] != requested_surface:
                 continue
-            if product["usage"] not in {requested_usage, "indoor/outdoor"}:
+            if not _usage_compatible(requested_usage, product["usage"]):
                 continue
 
             supplemental = dict(product)

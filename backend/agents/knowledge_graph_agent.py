@@ -13,7 +13,7 @@ PROBLEM_KEYWORDS = {
 def _usage_compatible(requested_usage, candidate_usage):
     if not requested_usage or not candidate_usage:
         return True
-    return candidate_usage == requested_usage or candidate_usage == "indoor/outdoor"
+    return requested_usage == candidate_usage or "indoor/outdoor" in {requested_usage, candidate_usage}
 
 
 def _combined_text(product):

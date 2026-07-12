@@ -6,9 +6,11 @@ def _available(product):
 
 
 def _usage_compatible(base_usage, candidate_usage):
+    if not base_usage or not candidate_usage:
+        return True
     if base_usage == candidate_usage:
         return True
-    return candidate_usage == "indoor/outdoor"
+    return "indoor/outdoor" in {base_usage, candidate_usage}
 
 
 def recommendation_agent(products, catalog, intent_data=None):
