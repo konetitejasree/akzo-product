@@ -272,6 +272,17 @@ def _rule_intent_agent(query):
     }
 
 
+def _should_treat_as_plain_greeting(intent_data):
+    intents = set(intent_data.get("intents", []))
+    non_greeting_intents = intents - {"greeting"}
+    return bool(intent_data.get("is_greeting")) and not (
+        intent_data.get("surfaces")
+        or intent_data.get("usage")
+        or intent_data.get("finish")
+        or non_greeting_intents
+    )
+
+
 def _ai_intent_agent(query, catalog):
     if not os.getenv("OPENAI_API_KEY"):
         return None
@@ -360,19 +371,33 @@ def intent_agent(query, catalog=None):
     ai_data = _ai_intent_agent(query, catalog or [])
 
     if not ai_data:
+        if not _should_treat_as_plain_greeting(rule_data):
+            rule_data["is_greeting"] = False
+            if rule_data.get("intents") == ["greeting"]:
+                rule_data["intents"] = ["product_search"]
         return rule_data
 
     surfaces = ai_data.get("surfaces") or rule_data.get("surfaces", [])
     usage = ai_data.get("usage") or rule_data.get("usage")
     finish = ai_data.get("finish") or rule_data.get("finish")
-    is_greeting = ai_data.get("is_greeting") or rule_data.get("is_greeting")
+    candidate_is_greeting = ai_data.get("is_greeting") or rule_data.get("is_greeting")
 
     merged_intents = []
     for intent in ai_data.get("intents", []) + rule_data.get("intents", []):
-        if intent == "greeting" and not is_greeting:
+        if intent == "greeting" and not candidate_is_greeting:
             continue
         if intent not in merged_intents:
             merged_intents.append(intent)
+
+    merged_view = {
+        **rule_data,
+        "surfaces": surfaces,
+        "usage": usage,
+        "finish": finish,
+        "intents": merged_intents or ["product_search"],
+        "is_greeting": candidate_is_greeting,
+    }
+    is_greeting = _should_treat_as_plain_greeting(merged_view)
 
     missing_slots = []
     if not surfaces:
@@ -477,7 +502,7 @@ def conversation_intent(history, query, catalog):
     if not merged_usage and "availability" not in merged_intents:
         missing_slots.append("usage")
 
-    if latest_query.get("is_greeting", False):
+    if _should_treat_as_plain_greeting(latest_query):
         merged_intents = ["greeting"]
     elif not merged_intents:
         merged_intents = ["product_search"]
@@ -491,7 +516,7 @@ def conversation_intent(history, query, catalog):
         "finish": merged_finish,
         "intents": merged_intents,
         "missing_slots": missing_slots,
-        "is_greeting": latest_query.get("is_greeting", False),
+        "is_greeting": _should_treat_as_plain_greeting(latest_query),
         "exact_product_sku": exact_product,
         "raw_mentioned_sku": raw_sku_candidate,
         "suggested_product_sku": suggested_product_sku,
