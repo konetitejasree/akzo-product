@@ -123,6 +123,21 @@ def _is_available_product(product):
     return bool(product and product.get("available", True) and product.get("stock", 0) > 0)
 
 
+def _has_actionable_non_gratitude_intent(intent_set):
+    return bool(
+        intent_set
+        & {
+            "availability",
+            "add_to_cart",
+            "product_details",
+            "show_alternatives",
+            "replacement",
+            "comparison",
+            "finish_change",
+        }
+    )
+
+
 def _collapse_repeated_phrases(text: str) -> str:
     parts = [part.strip() for part in re.split(r"[.!?]+", text) if part.strip()]
     if not parts:
@@ -269,7 +284,40 @@ def search(data: Query):
     selected_product = _selected_product_from_history(history, catalog_by_sku)
     selected_from_options = _selected_product_from_options(last_products, intent_data, catalog_by_sku)
 
-    if "gratitude" in intent_set:
+    if (
+        "availability" in intent_set
+        and intent_data.get("raw_mentioned_sku")
+        and not intent_data.get("exact_product_sku")
+        and intent_data.get("suggested_product_sku")
+    ):
+        suggested_product = _resolve_catalog_product(
+            catalog_by_sku,
+            {"sku": intent_data["suggested_product_sku"]},
+        )
+        return {
+            "response": (
+                f"I couldn't find SKU {intent_data['raw_mentioned_sku']}. "
+                f"Did you mean {suggested_product['sku']} ({suggested_product['name']})?"
+            ),
+            "products": [suggested_product] if suggested_product else [],
+            "cart_item": None,
+            "cart_items": [],
+            "intent": intent_data,
+            "history_count": len(history),
+            "steps": [],
+            "reason": None,
+            "next_question": (
+                f"Please confirm if you want details for {suggested_product['name']}."
+                if suggested_product
+                else None
+            ),
+        }
+
+    if (
+        "gratitude" in intent_set
+        and not _has_actionable_non_gratitude_intent(intent_set)
+        and not intent_data.get("raw_mentioned_sku")
+    ):
         return {
             "response": "You're welcome. Let me know if you want help finding another product.",
             "products": [],

@@ -136,6 +136,53 @@ def _detect_exact_product(query, catalog):
     return best_sku if best_score >= 0.72 else None
 
 
+def _normalize_sku(value):
+    return "".join(ch for ch in (value or "").lower() if ch.isalnum())
+
+
+def _extract_sku_candidate(query):
+    candidates = re.findall(r"\b[a-z0-9]+(?:-[a-z0-9]+)+\b", query.lower())
+    if not candidates:
+        return None
+
+    akzo_candidates = [candidate for candidate in candidates if any(ch.isdigit() for ch in candidate)]
+    if not akzo_candidates:
+        return None
+
+    preferred = [candidate for candidate in akzo_candidates if candidate.startswith("akz")]
+    return (preferred or akzo_candidates)[0].upper()
+
+
+def _suggest_sku_candidate(raw_sku, catalog):
+    if not raw_sku:
+        return None
+
+    normalized_input = _normalize_sku(raw_sku)
+    if not normalized_input:
+        return None
+
+    best_sku = None
+    best_score = 0.0
+
+    for product in catalog:
+        product_sku = product["sku"]
+        normalized_product_sku = _normalize_sku(product_sku)
+        if normalized_input == normalized_product_sku:
+            return product_sku
+
+        score = SequenceMatcher(None, normalized_input, normalized_product_sku).ratio()
+        if normalized_input[:3] == normalized_product_sku[:3]:
+            score += 0.04
+        if normalized_input[-3:] == normalized_product_sku[-3:]:
+            score += 0.08
+
+        if score > best_score:
+            best_score = score
+            best_sku = product_sku
+
+    return best_sku if best_score >= 0.8 else None
+
+
 def _detect_option_index(query):
     words = set(_tokens(query))
     for index, terms in OPTION_TERMS.items():
@@ -414,7 +461,11 @@ def conversation_intent(history, query, catalog):
     normalized_query = " ".join(text.strip() for text in ordered_messages if text.strip())
     tokens = _tokens(normalized_query)
     current_tokens = set(_tokens(query))
+    raw_sku_candidate = _extract_sku_candidate(query)
     exact_product = _detect_exact_product(query, catalog)
+    suggested_product_sku = None
+    if raw_sku_candidate and not exact_product:
+        suggested_product_sku = _suggest_sku_candidate(raw_sku_candidate, catalog)
 
     is_confirmation = bool(current_tokens & AFFIRMATION_TERMS) and "finish_change" not in merged_intents and any(
         msg.get("type") == "bot" and msg.get("products") for msg in history
@@ -442,6 +493,8 @@ def conversation_intent(history, query, catalog):
         "missing_slots": missing_slots,
         "is_greeting": latest_query.get("is_greeting", False),
         "exact_product_sku": exact_product,
+        "raw_mentioned_sku": raw_sku_candidate,
+        "suggested_product_sku": suggested_product_sku,
         "is_confirmation": is_confirmation,
         "selected_option": latest_query.get("selected_option"),
         "select_all": latest_query.get("select_all", False),
