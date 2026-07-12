@@ -491,6 +491,17 @@ def conversation_intent(history, query, catalog):
     suggested_product_sku = None
     if raw_sku_candidate and not exact_product:
         suggested_product_sku = _suggest_sku_candidate(raw_sku_candidate, catalog)
+    exact_product_data = next((product for product in catalog if product["sku"] == exact_product), None)
+
+    if exact_product_data:
+        merged_surface = exact_product_data.get("surface")
+        merged_usage = exact_product_data.get("usage")
+        merged_finish = exact_product_data.get("finish")
+        merged_intents = [
+            intent
+            for intent in merged_intents
+            if intent not in {"product_search", "comparison", "finish_change"}
+        ]
 
     is_confirmation = bool(current_tokens & AFFIRMATION_TERMS) and "finish_change" not in merged_intents and any(
         msg.get("type") == "bot" and msg.get("products") for msg in history

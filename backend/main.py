@@ -138,6 +138,32 @@ def _has_actionable_non_gratitude_intent(intent_set):
     )
 
 
+def _replacement_intent_from_product(product, base_intent=None):
+    base_intent = dict(base_intent or {})
+    return {
+        **base_intent,
+        "surfaces": [product.get("surface")] if product.get("surface") else [],
+        "usage": product.get("usage"),
+        "finish": None,
+        "exact_product_sku": product.get("sku"),
+        "intents": ["replacement"],
+        "missing_slots": [],
+        "is_greeting": False,
+    }
+
+
+def _available_replacements_for_product(product, catalog, base_intent=None):
+    replacement_intent = _replacement_intent_from_product(product, base_intent)
+    search_results = search_agent(replacement_intent, catalog, limit=8)
+    boosted_results = apply_behavior_boost(search_results)
+    recommendations = recommendation_agent(boosted_results, catalog, replacement_intent)
+    return [
+        enrich_product_content(item)
+        for item in recommendations
+        if item.get("sku") != product.get("sku") and _is_available_product(item)
+    ][:3]
+
+
 def _collapse_repeated_phrases(text: str) -> str:
     parts = [part.strip() for part in re.split(r"[.!?]+", text) if part.strip()]
     if not parts:
@@ -503,6 +529,28 @@ def search(data: Query):
         }
 
     if intent_data.get("is_confirmation"):
+        selected = selected_product or (last_products[0] if last_products else None)
+        selected = _resolve_catalog_product(catalog_by_sku, selected)
+
+        if selected and not _is_available_product(selected):
+            replacement_products = _available_replacements_for_product(selected, catalog, intent_data)
+            if replacement_products:
+                replacement_intent = _replacement_intent_from_product(selected, intent_data)
+                replacement_intent["selected_product"] = selected
+                next_question = clarification_agent(replacement_intent, replacement_products)
+                result = response_agent(replacement_products, replacement_intent, history, next_question)
+                return {
+                    "response": result["response"],
+                    "products": replacement_products,
+                    "cart_item": None,
+                    "cart_items": [],
+                    "intent": replacement_intent,
+                    "history_count": len(history),
+                    "steps": result.get("steps", []),
+                    "reason": result.get("reason"),
+                    "next_question": result.get("next_question"),
+                }
+
         if len(last_products) > 1 and not selected_product:
             names = " or ".join(product["name"] for product in last_products[:2])
             return {
@@ -517,8 +565,6 @@ def search(data: Query):
                 "next_question": f"Which one would you like: {names}?",
             }
 
-        selected = selected_product or (last_products[0] if last_products else None)
-        selected = _resolve_catalog_product(catalog_by_sku, selected)
         intent_data["selected_product"] = selected
         return {
             "response": f"Got it. {selected['name']} is selected." if selected else "Got it. That option is selected.",

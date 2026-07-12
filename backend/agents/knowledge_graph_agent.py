@@ -42,9 +42,17 @@ def guided_selling_path(product, intent_data=None):
     intent_data = intent_data or {}
     path = []
 
-    surface = ((intent_data.get("surfaces") or [None])[0]) or product.get("surface")
-    usage = intent_data.get("usage") or product.get("usage")
-    finish = intent_data.get("finish") or product.get("finish")
+    requested_surface = ((intent_data.get("surfaces") or [None])[0])
+    requested_usage = intent_data.get("usage")
+    requested_finish = intent_data.get("finish")
+
+    surface = requested_surface if requested_surface == product.get("surface") else product.get("surface")
+    usage = (
+        requested_usage
+        if requested_usage in {product.get("usage"), "indoor/outdoor"} or product.get("usage") == "indoor/outdoor"
+        else product.get("usage")
+    )
+    finish = requested_finish if requested_finish == product.get("finish") else product.get("finish")
     problems = product_problem_signals(product)
 
     if surface:
